@@ -1,0 +1,1 @@
+This repository contains scripts that I have used to convert freely available corpora to the VRT format, which is used by the Copus Query Processor (CQP) of the Corpus Workbench (http://cwb.sourceforge.net/).
