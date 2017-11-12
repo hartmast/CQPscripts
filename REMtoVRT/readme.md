@@ -8,6 +8,7 @@ The R script REMtoVRT.R converts the CORA-XML files of the Reference Corpus of M
   - the unzipped folder "rem-coraxml-20161222" with the CORA-XML data (.zip and .tar.gz files available via the link above)
   - an empty folder "rem-vrt"
 - open the REMtoVRT.R file and run it. (Make sure that the REMtoVRT folder is your working directory, which you can check using getwd(); you can change the working directory with setwd().) It will take several hours to compute.
+- Then you can import the files into CWB using the terminal commands in cwb-encode.txt.
 
 # How does the script deal with multi-layer annotation?
 The REM features multi-layer annotation, and in some cases, the annotation spans differ between different layers (e.g. zewâre 'indeed' is lemmatized as two words: ze and wâre). The script takes tok_dipl - the annotation that represents the text of the original manuscript - as the reference level. If one token at the tok_dipl level (which ends up as the obligatory "word" column in the VRT files) corresponds to multiple tokens at another level, the multiple tokens at another level will be pasted together with "&_&_" als separator. 
