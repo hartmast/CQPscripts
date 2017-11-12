@@ -1,4 +1,20 @@
-library(dplyr)
+#################
+# Preliminaries #
+#################
+
+# read / load packages
+sapply(c("dplyr", "data.table"), function(x) 
+  if(!is.element(x, installed.packages())) install.packages(x, dependencies = T))
+
+lapply(list("dplyr", "data.table"), require, character.only=T)
+
+options(stringsAsFactors = F)
+
+
+
+############################
+# list of files, tags etc. #
+############################
 
 # list of files
 files <- paste("rem-coraxml-20161222/", list.files("rem-coraxml-20161222/"), sep="")
@@ -19,15 +35,14 @@ metakeys <- c("<abbr_ddd>","<abbr_mwb>","<annotation_by>","<collation_by>",
               "<text-place>","<text-source>","<text-type>","<time>","<topic>","<annis:doc>")
 
 
-# create dataframe
-df <- as.data.frame(matrix(ncol=length(tags)+2, nrow=0))
-colnames(df) <- c("tok_dipl", "tok_anno", tags)
 
+###########
+# convert #
+###########
 
 for(doc in 1:length(files)) {
   # read current document
-  current <- scan(files[doc], what="char", sep="\n",
-                  fileEncoding = "UTF-8", quote="")
+  current <- readLines(files[doc])
   
   # replace all ampersands (as they cause problems in CQP)
   current <- gsub("&", "AMPERSAND", current)
@@ -38,21 +53,23 @@ for(doc in 1:length(files)) {
   t_end <- grep("</token", current)
   
   # create dataframe
-  df <- as.data.frame(matrix(ncol=length(tags)+2, nrow=0))
-  colnames(df) <- c("tok_dipl", "tok_anno", tags) 
+  df <- data.table(tok_dipl = character(length(t)), tok_anno=character(length(t)))
+  
+  # df <- as.data.frame(matrix(ncol=length(tags)+2, nrow=length(t)))
+  # colnames(df) <- c("tok_dipl", "tok_anno", tags) 
   
   # populate dataframe
   for(j in 1:length(t)) {
     # find annotations
     c <- current[t[j]:t_end[j]] # current slice
-    df[j,] <- NA
+    # df[j,] <- NA
     
     if(length(grep("<tok_dipl", c))>0) {
       if(length(grep("<tok_dipl", c))>1) {
         cc <- c[grep("<tok_dipl", c)]
-        df$tok_dipl[j] <- paste(sapply(1:length(cc), function(txt) gsub("\".*", "", unlist(strsplit(grep("<tok_dipl", cc[txt], value=T), "utf=\""))[2])), collapse="")
+        df[j, tok_dipl := paste(sapply(1:length(cc), function(txt) gsub("\".*", "", unlist(strsplit(grep("<tok_dipl", cc[txt], value=T), "utf=\""))[2])), collapse="")]
       } else {
-        df$tok_dipl[j] <- gsub("\".*", "", unlist(strsplit(grep("<tok_dipl", c, value=T), "utf=\""))[2])
+        df[j, tok_dipl := gsub("\".*", "", unlist(strsplit(grep("<tok_dipl", c, value=T), "utf=\""))[2])]
       }
       
     }
@@ -60,15 +77,24 @@ for(doc in 1:length(files)) {
     if(length(grep("<tok_anno", c))>0) {
       if(length(grep("<tok_anno", c))>1) {
         cc <- c[grep("<tok_anno", c)]
-        df$tok_anno[j] <- paste(sapply(1:length(cc), function(txt) gsub("\".*", "", unlist(strsplit(grep("<tok_anno", cc[txt], value=T), "utf=\""))[2])), collapse="")
+        df[j, tok_anno := paste(sapply(1:length(cc), function(txt) gsub("\".*", "", unlist(strsplit(grep("<tok_anno", cc[txt], value=T), "utf=\""))[2])), collapse="")]
       } else {
-        df$tok_anno[j] <- gsub("\".*", "", unlist(strsplit(grep("<tok_anno", c, value=T), "utf=\""))[2])
+        df[j, tok_anno := gsub("\".*", "", unlist(strsplit(grep("<tok_anno", c, value=T), "utf=\""))[2])]
       }
       
     }
     
+    # remove "/", as it is used as separator in CQP
+    df[, tok_dipl := gsub("/", "", tok_dipl)]
+    df[, tok_anno := gsub("/", "", tok_anno)]
     
+    
+    # add tags
     for(i in 1:length(tags)) {
+      if(j == 1) {
+        df[, tags[i] := character(nrow(df))]
+      }
+      
       if(length(grep(paste(tags[i], " tag", sep=""), c, value=T))>0) {
         
         c_tag <- gsub(".* tag=\"|\"/>", "", grep(paste(tags[i], " tag", sep=""), c, value=T))
@@ -77,7 +103,10 @@ for(doc in 1:length(files)) {
           c_tag <- paste(c_tag, collapse="_&_&")
         }
         
-        df[j,(i+2)] <- c_tag
+        # remove / (as it is used as separator in CQP)
+        c_tag <- gsub("/", "", c_tag)
+        
+        df[j,(i+2) := c_tag]
         
       }
       
@@ -89,18 +118,25 @@ for(doc in 1:length(files)) {
     
   }
   
+  
+  
   # get metatags and write document
-  metatags <- c()
+  metatags <- c(1000)
   
   for(i in 1:length(metakeys)) {
     if(length(grep(metakeys[i], current))>0) {
       c_mkey <- grep(metakeys[i], current, value=T)
-      metatags[i] <- paste(gsub("<|>", "", metakeys[i]), "=\"",  gsub("</.*", "", gsub("^ *", "", gsub(metakeys[i], "", c_mkey))), "\"", sep="", collapse="")
+      metatags[i] <- paste(gsub("<|>|\"", "", metakeys[i]), "=\"",  gsub("</.*", "", gsub("^ *", "", gsub(metakeys[i], "", c_mkey))), "\"", sep="", collapse="")
     } else {
-      metatags[i] <- paste(gsub("<|>", "", metakeys[i]), "=\"-\"", sep="", collapse="")
+      metatags[i] <- paste(gsub("<|>|\"", "", metakeys[i]), "=\"-\"", sep="", collapse="")
     }
   }
   
+  # remove NAs
+  metatags <- metatags[which(!is.na(metatags))]
+  
+  # remove : (as it causes problems in CQP)
+  gsub("annis:doc", "annis_doc", metatags)
   
   write.table("<?xml version='1.0' encoding='UTF-8'?>", 
               file = paste("rem-vrt/", gsub(".xml", "", gsub("rem-coraxml-20161222/", "", files[doc])),
@@ -139,59 +175,4 @@ for(doc in 1:length(files)) {
   print(doc)
   
 }
-
-# remove ":" from structural attribute names
-for(i in 2:length(files)) {
-  current <- scan(gsub("xml", "vrt", gsub("rem-coraxml-20161222", "rem-vrt", files[i])), 
-                  what="char", sep="\n",
-                  fileEncoding = "UTF-8", quote="")
-  
-  current[2] <- gsub("annis:doc", "annis_doc", current[2])
-  write.table(current, file=gsub("xml", "vrt", gsub("rem-coraxml-20161222", "rem-vrt", files[i])),
-              row.names=F, col.names=F, quote=F, fileEncoding = "UTF-8")
-  
-}
-
-# correct metakeys
-for(j in 1:length(files)) {
-  current <- scan(files[j], 
-                  what="char", sep="\n",
-                  fileEncoding = "UTF-8", quote="", nmax = 100)
-  
-  for(i in 1:length(metakeys)) {
-    if(length(grep(metakeys[i], current))>0) {
-      c_mkey <- grep(metakeys[i], current, value=T)
-      c_mkey <- gsub("\"", "", c_mkey)
-      metatags[i] <- paste(gsub("<|>", "", metakeys[i]), "=\"",  gsub("</.*", "", gsub("^ *", "", gsub(metakeys[i], "", c_mkey))), "\"", sep="", collapse="")
-    } else {
-      metatags[i] <- paste(gsub("<|>", "", metakeys[i]), "=\"-\"", sep="", collapse="")
-    }
-  }
-  
-  rm(current)
-  
-  current <- scan(gsub("xml", "vrt", gsub("rem-coraxml-20161222", "rem-vrt", files[j])), 
-                  what="char", sep="\n",
-                  fileEncoding = "UTF-8", quote="")
-  
-  current[2] <- paste("<text ", paste(metatags, sep="", collapse=" "), ">", sep="", collapse=" ")
-  write.table(current, file=gsub("xml", "vrt", gsub("rem-coraxml-20161222", "rem-vrt", files[j])),
-              row.names=F, col.names=F, quote=F, fileEncoding = "UTF-8")
-  
-  rm(current)
-  
-}
-
-# remove ":" from structural attribute names (again)
-for(i in 1:length(files)) {
-  current <- scan(gsub("xml", "vrt", gsub("rem-coraxml-20161222", "rem-vrt", files[i])), 
-                  what="char", sep="\n",
-                  fileEncoding = "UTF-8", quote="")
-  
-  current[2] <- gsub("annis:doc", "annis_doc", current[2])
-  write.table(current, file=gsub("xml", "vrt", gsub("rem-coraxml-20161222", "rem-vrt", files[i])),
-              row.names=F, col.names=F, quote=F, fileEncoding = "UTF-8")
-  
-}
-
 
